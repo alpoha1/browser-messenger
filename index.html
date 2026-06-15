@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мой Мессенджер</title>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    .chat-container { scrollbar-width: thin; }
+    .message-bubble { max-width: 75%; }
+    .modal { animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from {opacity:0;} to {opacity:1;} }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex">
+  <!-- Sidebar -->
+  <div id="sidebar" class="w-80 bg-gray-900 border-r border-gray-700 flex flex-col">
+    <div class="p-4 border-b border-gray-700 flex items-center justify-between">
+      <h1 class="text-2xl font-bold text-blue-400">Мессенджер</h1>
+      <button onclick="logout()" class="text-gray-400 hover:text-white"><i class="fas fa-sign-out-alt"></i></button>
+    </div>
+    
+    <div class="p-4">
+      <input id="searchInput" type="text" placeholder="Поиск по username..." 
+             class="w-full bg-gray-800 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+             onkeyup="searchUsers()">
+      <button onclick="showNewChatModal()" 
+              class="mt-4 w-full bg-blue-600 hover:bg-blue-700 py-2 rounded-lg flex items-center justify-center gap-2">
+        <i class="fas fa-plus"></i> Новый чат
+      </button>
+    </div>
+    
+    <div id="chatsList" class="flex-1 overflow-y-auto"></div>
+  </div>
+
+  <!-- Chat Area -->
+  <div class="flex-1 flex flex-col">
+    <div id="chatHeader" class="bg-gray-900 border-b border-gray-700 p-4 flex items-center hidden">
+      <div id="chatAvatar" class="w-10 h-10 bg-gray-700 rounded-full mr-3"></div>
+      <div>
+        <div id="chatName" class="font-semibold"></div>
+        <div id="chatStatus" class="text-xs text-green-400">онлайн</div>
+      </div>
+    </div>
+    
+    <div id="chatArea" class="flex-1 overflow-y-auto p-4 chat-container bg-gray-950 space-y-4 hidden"></div>
+    
+    <div id="messageInputArea" class="bg-gray-900 border-t border-gray-700 p-4 hidden">
+      <div class="flex gap-2">
+        <input id="fileInput" type="file" accept="image/*,video/*,.pdf" class="hidden" onchange="sendFile(this.files[0])">
+        <button onclick="document.getElementById('fileInput').click()" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg">
+          <i class="fas fa-paperclip"></i>
+        </button>
+        <input id="messageInput" type="text" placeholder="Напишите сообщение..." 
+               class="flex-1 bg-gray-800 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+               onkeypress="if(event.key === 'Enter') sendMessage()">
+        <button onclick="sendMessage()" class="px-6 bg-blue-600 hover:bg-blue-700 rounded-lg">
+          <i class="fas fa-paper-plane"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auth Modal -->
+  <div id="authModal" class="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+    <div class="bg-gray-900 p-8 rounded-2xl w-96 modal">
+      <h2 class="text-2xl font-bold mb-6 text-center" id="authTitle">Вход</h2>
+      <input id="email" type="email" placeholder="Email" class="w-full bg-gray-800 rounded-lg px-4 py-3 mb-3">
+      <input id="password" type="password" placeholder="Пароль" class="w-full bg-gray-800 rounded-lg px-4 py-3 mb-3">
+      <input id="username" type="text" placeholder="Username" class="w-full bg-gray-800 rounded-lg px-4 py-3 mb-6 hidden">
+      <button onclick="handleAuth()" id="authBtn" class="w-full bg-blue-600 py-3 rounded-lg font-semibold">Войти</button>
+      <p onclick="toggleAuthMode()" class="text-center text-blue-400 mt-4 cursor-pointer">Нет аккаунта? Зарегистрироваться</p>
+    </div>
+  </div>
+
+  <!-- New Chat Modal -->
+  <div id="newChatModal" class="fixed inset-0 bg-black/80 hidden flex items-center justify-center z-50">
+    <div class="bg-gray-900 p-6 rounded-2xl w-96">
+      <h3 class="text-xl mb-4">Новый чат</h3>
+      <input id="newUsername" placeholder="Username пользователя" class="w-full bg-gray-800 rounded-lg px-4 py-3">
+      <div class="mt-4 flex gap-3">
+        <button onclick="hideNewChatModal()" class="flex-1 py-2 bg-gray-700 rounded-lg">Отмена</button>
+        <button onclick="createChat()" class="flex-1 py-2 bg-blue-600 rounded-lg">Создать</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const firebaseConfig = {
+      // ЗАМЕНИ НА СВОЙ!
+      apiKey: "YOUR_API_KEY",
+      authDomain: "your-project.firebaseapp.com",
+      projectId: "your-project",
+      storageBucket: "your-project.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "your-app-id"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const storage = firebase.storage();
+
+    let currentUser = null;
+    let currentChatId = null;
+
+    function toggleAuthMode() {
+      const isLogin = document.getElementById('authTitle').textContent === 'Вход';
+      document.getElementById('authTitle').textContent = isLogin ? 'Регистрация' : 'Вход';
+      document.getElementById('username').classList.toggle('hidden');
+      document.getElementById('authBtn').textContent = isLogin ? 'Зарегистрироваться' : 'Войти';
+    }
+
+    async function handleAuth() {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const usernameInput = document.getElementById('username').value;
+
+      try {
+        if (document.getElementById('authTitle').textContent === 'Регистрация') {
+          const userCred = await auth.createUserWithEmailAndPassword(email, password);
+          await db.collection('users').doc(userCred.user.uid).set({ 
+            username: usernameInput || email.split('@')[0], 
+            email 
+          });
+        } else {
+          await auth.signInWithEmailAndPassword(email, password);
+        }
+        document.getElementById('authModal').classList.add('hidden');
+      } catch (e) { alert(e.message); }
+    }
+
+    function logout() { auth.signOut(); }
+
+    auth.onAuthStateChanged(user => {
+      if (user) {
+        currentUser = user;
+        document.getElementById('authModal').classList.add('hidden');
+        initApp();
+      } else {
+        document.getElementById('authModal').classList.remove('hidden');
+      }
+    });
+
+    async function initApp() {
+      loadChats();
+    }
+
+    // TODO: Реализовать loadChats, sendMessage и т.д. с onSnapshot
+    function loadChats() { console.log('Загрузка чатов...'); }
+    async function searchUsers() { console.log('Поиск...'); }
+    function showNewChatModal() { document.getElementById('newChatModal').classList.remove('hidden'); }
+    function hideNewChatModal() { document.getElementById('newChatModal').classList.add('hidden'); }
+    async function createChat() { alert('Реализуй логику создания чата'); hideNewChatModal(); }
+    async function sendMessage() { alert('Сообщение отправлено (добавь Firestore)'); }
+    async function sendFile(file) {
+      if (!file) return;
+      alert('Файл загружается...');
+    }
+  </script>
+</body>
+</html>
